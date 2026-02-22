@@ -1,0 +1,9 @@
+p, alice, data/alice, write
+p, alice, data/alice, read
+p, alice, data/alice, subscribe
+
+p, admin, *, write
+p, admin, *, read
+p, admin, *, subscribe
+
+g, bob, admin

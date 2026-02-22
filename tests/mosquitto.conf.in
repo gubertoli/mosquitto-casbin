@@ -1,0 +1,7 @@
+listener 18885
+allow_anonymous true
+persistence false
+
+plugin @PLUGIN_PATH@
+auth_opt_casbin_model  @MODEL_PATH@
+auth_opt_casbin_policy @POLICY_PATH@

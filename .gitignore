@@ -1,0 +1,63 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# CMake build directory
+/build/
+/build_*/
+/bin/
+/lib/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CPackConfig.cmake
+CPackSourceConfig.cmake
+install_manifest.txt
+
+# IDE / Editor configuration files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Casbin fetch content
+_deps/
+
+# Local configuration files
+mosquitto.conf
+*.pem
+*.crt
+*.key
