@@ -10,24 +10,32 @@ This plugin implements the **Mosquitto Plugin Interface v5**. It is designed to 
 
 * **Granular Access Control**: Manage permissions using Casbin's powerful policy engine (ACL, RBAC, ABAC).
 * **Authentication Agnostic**: Automatically resolves the user identity from:
-    1.  MQTT Username (Password auth or TLS `use_identity_as_username`)
-    2.  TLS Certificate Common Name (CN) (if no username is present)
-    3.  Fallback to "anonymous"
+    1.  MQTT Username (password authentication, or TLS with `use_identity_as_username` configured)
+    2.  TLS Certificate Common Name (CN) — only when no MQTT username is provided
+    3.  Fallback to `"anonymous"`
 
+
+## Security Behavior
+
+When a policy evaluation error occurs (e.g., malformed policy file or internal Casbin exception), the plugin **denies access by default** (fail-closed). Access is also denied for any ACL action type not recognised by the plugin. The plugin never falls back to another plugin or grants access on error.
 
 ## Dependencies
 
 To build this plugin, you need a C++17 compatible compiler and the following:
 
 * **CMake** (>= 3.19)
-* **Mosquitto** (Development headers for v2.0+)
+* **Mosquitto** — broker plugin headers: `mosquitto-dev` on Debian/Ubuntu, or the headers from a Mosquitto source build / Windows installer
 * **OpenSSL**
+
+In a Debian/Ubuntu environment:
+```bash
+sudo apt install mosquitto mosquitto-dev libssl-dev cmake build-essential
+```
 
 ### Build
 ```bash
-mkdir build && cd build
-cmake ..
-make
+cmake -B build
+cmake --build build
 ```
 
 This will produce the shared library file: `mosquitto-casbin.so`.
