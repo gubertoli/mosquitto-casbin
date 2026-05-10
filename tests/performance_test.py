@@ -1,5 +1,6 @@
 import sys
 import subprocess
+import tempfile
 import time
 import os
 import paho.mqtt.client as mqtt
@@ -12,12 +13,15 @@ PORT_BASE = 18886
 
 def run_benchmark(config_file, port, label):
     broker = None
+    tmp_config = None
     try:
-        base_config = "mosquitto_baseline.conf"
         if label == "Baseline":
-            with open(base_config, "w") as f:
-                f.write(f"listener {port}\nallow_anonymous true\n")
-            config_to_use = base_config
+            tmp_config = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".conf", delete=False
+            )
+            tmp_config.write(f"listener {port}\nallow_anonymous true\n")
+            tmp_config.flush()
+            config_to_use = tmp_config.name
         else:
             config_to_use = config_file
 
@@ -31,25 +35,26 @@ def run_benchmark(config_file, port, label):
         client.connect("localhost", port)
 
         client.loop_start()
-        
+
         start_time = time.time()
         for i in range(MSG_COUNT):
             client.publish("perf/test", "payload", qos=1)
-        
+
         while client._out_messages:
             time.sleep(0.01)
 
         end_time = time.time()
-        
+
         client.loop_stop()
 
         duration = end_time - start_time
         mps = MSG_COUNT / duration
         return mps
-    
+
     except Exception as e:
         print(f"\n[FAIL] Test Failed: {e}")
-        broker.terminate()
+        if broker is not None:
+            broker.terminate()
         sys.exit(1)
 
     finally:
@@ -62,9 +67,13 @@ def run_benchmark(config_file, port, label):
             except subprocess.TimeoutExpired:
                 broker.kill()
                 broker.wait()
-        
-        if label == "Baseline" and os.path.exists("mosquitto_baseline.conf"):
-            os.remove("mosquitto_baseline.conf")
+
+        if tmp_config is not None:
+            tmp_config.close()
+            try:
+                os.unlink(tmp_config.name)
+            except OSError:
+                pass
 
 if __name__ == "__main__":
     print(f"--- Benchmarking {MSG_COUNT} Messages (QoS 1) ---")
