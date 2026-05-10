@@ -96,18 +96,30 @@ int callback_acl_check([[maybe_unused]] int event, void *event_data, void *userd
 
     // Casbin Subject ~ MQTT Client
     const char* client_username = mosquitto_client_username(ed->client);
-    std::string sub = (client_username) ? client_username : "anonymous";
-	
-	X509* cert = (X509*)mosquitto_client_certificate(ed->client);
-	if (cert) {
-		if (sub == "anonymous") {
-			std::string cert_cn = extract_cn_from_cert(cert);
-			if (!cert_cn.empty()) {
-				sub = cert_cn;
-			}
-		}
-		X509_free(cert);
-	}
+    std::string sub = (client_username && client_username[0] != '\0')
+                      ? client_username : "anonymous";
+
+    X509* cert = (X509*)mosquitto_client_certificate(ed->client);
+    if (cert) {
+        if (sub == "anonymous") {
+            std::string cert_cn = extract_cn_from_cert(cert);
+            if (!cert_cn.empty()) {
+                sub = cert_cn;
+            }
+        }
+        X509_free(cert);
+    }
+
+    // Reject control characters (bytes 0-31 and 127) in the resolved subject.
+    // Applies to both MQTT usernames and TLS certificate CNs: these bytes are
+    // invalid in both contexts and could cause undefined behaviour in Casbin matchers.
+    for (unsigned char c : sub) {
+        if (c < 0x20 || c == 0x7f) {
+            mosquitto_log_printf(MOSQ_LOG_WARNING,
+                "mosquitto-casbin: subject contains control character, denying.");
+            return MOSQ_ERR_ACL_DENIED;
+        }
+    }
 
     // Casbin Object ~ MQTT Topic
     std::string obj = (ed->topic) ? ed->topic : "";
