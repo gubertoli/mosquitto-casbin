@@ -11,15 +11,25 @@ endif()
 find_package(OpenSSL REQUIRED)
 
 find_path(MOSQUITTO_INCLUDE_DIR
-          NAMES mosquitto_broker.h
-          HINTS "C:/mosquitto/devel" "C:/mosquitto" "/usr/include" "/usr/local/include")
+          NAMES mosquitto/broker.h mosquitto_broker.h
+          HINTS "C:/mosquitto/devel" "C:/mosquitto" "/usr/include" "/usr/local/include"
+          NO_CMAKE_FIND_ROOT_PATH)
 
-find_library(MOSQUITTO_LIB NAMES mosquitto_broker mosquitto 
-          HINTS "C:/mosquitto" "C:/mosquitto/devel" "/usr/lib" "/usr/local/lib" "/usr/lib/x86_64-linux-gnu")
+if(NOT MOSQUITTO_INCLUDE_DIR)
+    message(FATAL_ERROR "Mosquitto plugin headers not found! "
+            "Install mosquitto-dev (Debian/Ubuntu) or the Mosquitto Windows installer.")
+endif()
 
-
-if(NOT MOSQUITTO_INCLUDE_DIR OR NOT MOSQUITTO_LIB)
-    message(FATAL_ERROR "Mosquitto headers or library not found! Check your installation paths.")
+# On Linux the broker resolves plugin symbols at runtime via dlopen; no import
+# library is needed. On Windows a .lib import library is required for linking.
+if(WIN32)
+    find_library(MOSQUITTO_LIB NAMES mosquitto_broker mosquitto
+                 HINTS "C:/mosquitto/devel" "C:/mosquitto"
+                 NO_CMAKE_FIND_ROOT_PATH)
+    if(NOT MOSQUITTO_LIB)
+        message(FATAL_ERROR "Mosquitto import library not found! "
+                "Install the Mosquitto Windows installer.")
+    endif()
 endif()
 
 include(FetchContent)
@@ -49,7 +59,7 @@ target_link_libraries(mosquitto-casbin PRIVATE
     casbin
     OpenSSL::SSL
     OpenSSL::Crypto
-    "${MOSQUITTO_LIB}"
+    $<$<BOOL:${WIN32}>:${MOSQUITTO_LIB}>
 )
 
 target_compile_options(mosquitto-casbin PRIVATE

@@ -18,8 +18,15 @@
 #include <openssl/x509.h>
 #include <openssl/asn1.h>
 #include <mosquitto.h>
-#include <mosquitto_broker.h>
-#include <mosquitto_plugin.h>
+// Mosquitto 2.1+ reorganised plugin headers under mosquitto/ and deprecated the
+// flat mosquitto_broker.h (with a #warning that MSVC rejects as an error).
+// Use __has_include to pick the right form at compile time.
+#if __has_include(<mosquitto/broker.h>)
+#  include <mosquitto/broker.h>
+#else
+#  include <mosquitto_broker.h>
+#  include <mosquitto_plugin.h>
+#endif
 #include <memory>
 #include <string>
 #include <vector>
