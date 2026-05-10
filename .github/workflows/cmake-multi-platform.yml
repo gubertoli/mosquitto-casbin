@@ -56,13 +56,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        # Install OpenSSL
-        sudo apt-get install -y libssl-dev
-        
-        # Add Mosquitto PPA to guarantee v2.0+ (default repos might be older)
-        sudo add-apt-repository ppa:mosquitto-dev/mosquitto-ppa -y
-        sudo apt-get update
-        sudo apt-get install -y libmosquitto-dev
+        sudo apt-get install -y libssl-dev mosquitto mosquitto-dev
 
     - name: Install Dependencies (Windows)
       if: runner.os == 'Windows'
