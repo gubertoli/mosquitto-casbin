@@ -1,10 +1,21 @@
 import sys
 import subprocess
+import socket
 import time
 import paho.mqtt.client as mqtt
 
 BROKER_EXE = sys.argv[1]
 CONF_FILE = sys.argv[2]
+
+def wait_for_broker(host, port, timeout=10):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return
+        except OSError:
+            time.sleep(0.1)
+    raise TimeoutError(f"Broker did not start on {host}:{port} within {timeout}s")
 
 def main():
     print(f"--- Starting Broker: {BROKER_EXE} -c {CONF_FILE} ---")
@@ -12,7 +23,7 @@ def main():
         [BROKER_EXE, "-c", CONF_FILE],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
     )
-    time.sleep(2)
+    wait_for_broker("localhost", 18885)
 
     received_messages = []
 
@@ -60,6 +71,21 @@ def main():
         if "system/critical" not in received_messages:
             raise Exception("Bob failed to write as admin to system/critical!")
         print("[PASS] Bob wrote to system/critical using admin role")
+
+        # ==========================================
+        # TEST 4: Alice Subscribe Denial
+        # ==========================================
+        alice_received = []
+        c_alice.on_message = lambda c, u, m: alice_received.append(m.topic)
+        c_alice.subscribe("data/bob", qos=1)
+        time.sleep(0.5)
+        # Bob publishes to data/bob; Alice should not receive it because her
+        # subscription to data/bob was denied by the Casbin policy.
+        c_bob.publish("data/bob", "secret", qos=1).wait_for_publish()
+        time.sleep(0.5)
+        if "data/bob" in alice_received:
+            raise Exception("Alice received data/bob after her subscribe should have been denied!")
+        print("[PASS] Alice was denied subscribing to data/bob")
 
         c_alice.loop_stop()
         c_bob.loop_stop()
