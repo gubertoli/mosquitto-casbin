@@ -5,15 +5,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(MSVC)
-    add_compile_options(/W4 /permissive-)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
 find_package(OpenSSL REQUIRED)
 
-find_path(MOSQUITTO_INCLUDE_DIR 
-          NAMES mosquitto/broker.h mosquitto.h
-          HINTS "C:/mosquitto" "C:/mosquitto/devel" "/usr/include" "/usr/local/include")
+find_path(MOSQUITTO_INCLUDE_DIR
+          NAMES mosquitto_broker.h
+          HINTS "C:/mosquitto/devel" "C:/mosquitto" "/usr/include" "/usr/local/include")
 
 find_library(MOSQUITTO_LIB NAMES mosquitto_broker mosquitto 
           HINTS "C:/mosquitto" "C:/mosquitto/devel" "/usr/lib" "/usr/local/lib" "/usr/lib/x86_64-linux-gnu")
@@ -46,11 +45,16 @@ target_include_directories(mosquitto-casbin PRIVATE
     "${MOSQUITTO_INCLUDE_DIR}"
 )
 
-target_link_libraries(mosquitto-casbin PRIVATE 
-    casbin 
-    OpenSSL::SSL 
-    OpenSSL::Crypto 
+target_link_libraries(mosquitto-casbin PRIVATE
+    casbin
+    OpenSSL::SSL
+    OpenSSL::Crypto
     "${MOSQUITTO_LIB}"
+)
+
+target_compile_options(mosquitto-casbin PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
 )
 
 install(TARGETS mosquitto-casbin DESTINATION lib)
