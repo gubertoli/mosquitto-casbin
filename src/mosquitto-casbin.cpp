@@ -23,9 +23,10 @@
 // and MOSQ_LOG_* constants). The 2.0.x flat headers are not self-contained so
 // mosquitto.h must be included explicitly.
 #if __has_include(<mosquitto/broker.h>)
-#  include <mosquitto/broker.h>
+#  include <mosquitto/broker.h>         // broker API + MOSQ_ERR_*/MOSQ_LOG_* via defs.h
+#  include <mosquitto/broker_plugin.h>  // MOSQ_ACL_*, mosquitto_opt, mosquitto_plugin_id_t
 #else
-#  include <mosquitto.h>
+#  include <mosquitto.h>                // MOSQ_ERR_*, MOSQ_LOG_* (not in flat broker headers)
 #  include <mosquitto_broker.h>
 #  include <mosquitto_plugin.h>
 #endif
