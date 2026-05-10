@@ -1,6 +1,8 @@
 import sys
 import subprocess
 import socket
+import tempfile
+import os
 import time
 import paho.mqtt.client as mqtt
 
@@ -108,5 +110,64 @@ def main():
                 broker.kill()
                 broker.wait()
 
+def test_init_failure_is_fail_closed(broker_exe, valid_conf_file):
+    # Parse plugin path from the working conf so we can reuse it.
+    plugin_path = None
+    for line in open(valid_conf_file):
+        if line.startswith("plugin "):
+            plugin_path = line.split(None, 1)[1].strip()
+            break
+    if not plugin_path:
+        raise Exception("Could not parse plugin path from conf file")
+
+    # A syntactically broken model forces the Casbin Enforcer constructor to
+    # throw, triggering mosquitto_plugin_init → MOSQ_ERR_UNKNOWN → broker exit.
+    broken_model = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".conf", delete=False
+    )
+    broken_model.write("[request_definition]\nr = sub, obj, act\n\nTHIS IS GARBAGE\n")
+    broken_model.flush()
+
+    tmp_conf = tempfile.NamedTemporaryFile(mode="w", suffix=".conf", delete=False)
+    tmp_conf.write(f"listener 18887\nallow_anonymous true\npersistence false\n")
+    tmp_conf.write(f"plugin {plugin_path}\n")
+    tmp_conf.write(f"auth_opt_casbin_model  {broken_model.name}\n")
+    tmp_conf.write(f"auth_opt_casbin_policy /tmp/policy_placeholder.csv\n")
+    tmp_conf.flush()
+
+    broker = None
+    try:
+        broker = subprocess.Popen(
+            [broker_exe, "-c", tmp_conf.name],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        # Broker should exit within 3 s; poll until it does.
+        deadline = time.time() + 3.0
+        while time.time() < deadline and broker.poll() is None:
+            time.sleep(0.1)
+
+        if broker.poll() is None:
+            raise Exception(
+                "Broker stayed alive despite broken plugin config — plugin is NOT fail-closed on init failure!"
+            )
+        if broker.returncode == 0:
+            raise Exception(
+                f"Broker exited cleanly (rc=0) instead of with an error code — unexpected."
+            )
+        print(f"[PASS] Broker refused to start with broken plugin config (rc={broker.returncode}, fail-closed)")
+    finally:
+        if broker is not None and broker.poll() is None:
+            broker.terminate()
+            broker.wait(timeout=5)
+        for f in (broken_model, tmp_conf):
+            f.close()
+            try:
+                os.unlink(f.name)
+            except OSError:
+                pass
+
+
 if __name__ == "__main__":
     main()
+    test_init_failure_is_fail_closed(BROKER_EXE, CONF_FILE)
+    print("--- All tests passed ---")
