@@ -18,7 +18,9 @@
 #include <openssl/x509.h>
 #include <openssl/asn1.h>
 #include <mosquitto.h>
-#include <mosquitto/broker.h>
+#include <mosquitto_broker.h>
+#include <mosquitto_plugin.h>
+#include <memory>
 #include <string>
 #include <vector>
 #include <stdexcept>
@@ -26,11 +28,11 @@
 #ifdef WIN32
 #  define PLUGIN_EXPORT __declspec(dllexport)
 #else
-#  define PLUGIN_EXPORT
+#  define PLUGIN_EXPORT __attribute__((visibility("default")))
 #endif
 
 struct UserData {
-    casbin::Enforcer* enforcer;
+    std::unique_ptr<casbin::Enforcer> enforcer;
     std::string model_path;
     std::string policy_path;
 };
@@ -53,12 +55,16 @@ std::string extract_cn_from_cert(X509* cert) {
     if (!cert) return "";
 
     X509_NAME *subj_name = X509_get_subject_name(cert);
+    if (!subj_name) return "";
+
     int nid = X509_NAME_get_index_by_NID(subj_name, NID_commonName, -1);
-    
     if (nid == -1) return "";
 
     X509_NAME_ENTRY *entry = X509_NAME_get_entry(subj_name, nid);
+    if (!entry) return "";
+
     ASN1_STRING *entry_data = X509_NAME_ENTRY_get_data(entry);
+    if (!entry_data) return "";
     
     unsigned char *utf8 = nullptr;
     int len = ASN1_STRING_to_UTF8(&utf8, entry_data);
@@ -74,7 +80,7 @@ std::string extract_cn_from_cert(X509* cert) {
 /* * Callback: ACL Check
  * Event: MOSQ_EVT_ACL_CHECK
  */
-int callback_acl_check(int event, void *event_data, void *userdata) {
+int callback_acl_check([[maybe_unused]] int event, void *event_data, void *userdata) {
     auto *ud = static_cast<UserData*>(userdata);
     auto *ed = static_cast<struct mosquitto_evt_acl_check*>(event_data);
 
@@ -98,14 +104,18 @@ int callback_acl_check(int event, void *event_data, void *userdata) {
 
     // Casbin Action ~ MQTT Access Type
     std::string act = get_action_string(ed->access);
+    if (act == "unknown") {
+        mosquitto_log_printf(MOSQ_LOG_WARNING, "mosquitto-casbin: unrecognized ACL action %d, denying.", ed->access);
+        return MOSQ_ERR_ACL_DENIED;
+    }
 
     // Casbin Request
     bool authorized = false;
     try {
         authorized = ud->enforcer->Enforce({ sub, obj, act });
     } catch (...) {
-        mosquitto_log_printf(MOSQ_LOG_ERR, "mosquitto-casbin: Enforce threw an exception."); //
-        return MOSQ_ERR_PLUGIN_DEFER;
+        mosquitto_log_printf(MOSQ_LOG_ERR, "mosquitto-casbin: Enforce threw an exception, denying.");
+        return MOSQ_ERR_ACL_DENIED;
     }
 
     return authorized ? MOSQ_ERR_SUCCESS : MOSQ_ERR_ACL_DENIED;
@@ -122,9 +132,8 @@ PLUGIN_EXPORT int mosquitto_plugin_version(int supported_version_count, const in
     return -1;
 }
 
-PLUGIN_EXPORT int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **userdata, struct mosquitto_opt *opts, int opt_count) { //
+PLUGIN_EXPORT int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **userdata, struct mosquitto_opt *opts, int opt_count) {
     auto *ud = new UserData();
-    *userdata = ud;
 
     ud->model_path = "model.conf";
     ud->policy_path = "policy.csv";
@@ -133,7 +142,7 @@ PLUGIN_EXPORT int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void 
     for (int i = 0; i < opt_count; i++) {
         std::string key(opts[i].key);
         std::string value(opts[i].value);
-        
+
         if (key == "casbin_model") {
             ud->model_path = value;
         } else if (key == "casbin_policy") {
@@ -142,31 +151,30 @@ PLUGIN_EXPORT int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void 
     }
 
     try {
-        ud->enforcer = new casbin::Enforcer(ud->model_path, ud->policy_path);
+        ud->enforcer = std::make_unique<casbin::Enforcer>(ud->model_path, ud->policy_path);
         mosquitto_log_printf(MOSQ_LOG_INFO, "mosquitto-casbin: Enforcer initialized with %s", ud->model_path.c_str());
     } catch (const std::exception& e) {
         mosquitto_log_printf(MOSQ_LOG_ERR, "mosquitto-casbin: Failed to initialize Enforcer: %s", e.what());
+        delete ud;
         return MOSQ_ERR_UNKNOWN;
     } catch (...) {
         mosquitto_log_printf(MOSQ_LOG_ERR, "mosquitto-casbin: Failed to initialize Enforcer");
-		delete ud;
+        delete ud;
         return MOSQ_ERR_UNKNOWN;
     }
 
-    int rc;
+    int rc = mosquitto_callback_register(identifier, MOSQ_EVT_ACL_CHECK, callback_acl_check, NULL, ud);
+    if (rc != MOSQ_ERR_SUCCESS) {
+        delete ud;
+        return rc;
+    }
 
-    rc = mosquitto_callback_register(identifier, MOSQ_EVT_ACL_CHECK, callback_acl_check, NULL, ud);
-    if (rc != MOSQ_ERR_SUCCESS) return rc;
-
+    *userdata = ud;
     return MOSQ_ERR_SUCCESS;
 }
 
-PLUGIN_EXPORT int mosquitto_plugin_cleanup(void *userdata, struct mosquitto_opt *opts, int opt_count) { //
-    auto *ud = static_cast<UserData*>(userdata);
-    if (ud) {
-        if (ud->enforcer) delete ud->enforcer;
-        delete ud;
-    }
+PLUGIN_EXPORT int mosquitto_plugin_cleanup(void *userdata, [[maybe_unused]] struct mosquitto_opt *opts, [[maybe_unused]] int opt_count) {
+    delete static_cast<UserData*>(userdata);
     return MOSQ_ERR_SUCCESS;
 }
 
