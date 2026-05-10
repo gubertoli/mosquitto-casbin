@@ -17,13 +17,15 @@
 #include <casbin/casbin.h>
 #include <openssl/x509.h>
 #include <openssl/asn1.h>
-#include <mosquitto.h>
 // Mosquitto 2.1+ reorganised plugin headers under mosquitto/ and deprecated the
 // flat mosquitto_broker.h (with a #warning that MSVC rejects as an error).
-// Use __has_include to pick the right form at compile time.
+// mosquitto/broker.h is self-contained (pulls in mosquitto/defs.h for MOSQ_ERR_*
+// and MOSQ_LOG_* constants). The 2.0.x flat headers are not self-contained so
+// mosquitto.h must be included explicitly.
 #if __has_include(<mosquitto/broker.h>)
 #  include <mosquitto/broker.h>
 #else
+#  include <mosquitto.h>
 #  include <mosquitto_broker.h>
 #  include <mosquitto_plugin.h>
 #endif
